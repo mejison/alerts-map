@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Відкрийте адресу Local, яку покаже сервер (зазвичай http://127.0.0.1:5173).
+Відкрийте адресу Local, яку покаже сервер (Next.js зазвичай http://localhost:3000). Для попереднього Vinext/Cloudflare dev-сервера використовуйте `npm run dev:cloudflare` (порт 5173).
 
 ```sh
 npm test
@@ -30,7 +30,7 @@ npm run build
 - Functions directory: `netlify/functions`.
 - Node.js: 22.
 
-Це окрема Vite-збірка тієї самої карти. `/api/live` обслуговує Netlify Function зі спільними серверними провайдерами, WebSocket працює без змін. Стандартний `npm run build` лишається збіркою Vinext для Cloudflare/Sites.
+Це окрема Vite-збірка тієї самої карти. `/api/live` обслуговує Netlify Function зі спільними серверними провайдерами, WebSocket працює без змін. Збережено додану раніше можливість звичайної Next.js-збірки: `npm run build` / `npm start`. Для Cloudflare/Sites — `npm run build:cloudflare` / `npm run start:cloudflare`; під час пакування Sites задайте `VARTA_BUILD_TARGET=cloudflare`, і стандартний build helper використає Vinext. Netlify вибирає свою збірку з `netlify.toml`.
 
 Помилка `Your publish directory does not contain expected Next.js build output` виникала через автоматичний Next.js Runtime, який шукав `.next`, хоча Vinext створює Worker-збірку. `NETLIFY_NEXT_PLUGIN_SKIP=true` у конфігурації пропускає цей плагін (підтримується Runtime 5.12+). Якщо в Netlify вручну закріплено старіший плагін, вимкніть його в Project configuration → Build plugins. Після push запустіть новий deploy, якщо автоматичні деплої вимкнені.
 
