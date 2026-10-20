@@ -29,7 +29,11 @@ export function ThreatGlyph({type}: {type: string}) {
   if (type === 'kab') {
     return <g fill="currentColor"><path d="M-3-9-6-11V-5L-3-3H3L6-5V-11L3-9ZM-3-2H3C7 2 5 9 0 11-5 9-7 2-3-2Z"/></g>;
   }
-  if (type === 'uav' || type === 'recon') {
+  if (type === 'uav') {
+    // Delta wing and projecting nose, matching the supplied UAV silhouette.
+    return <path fill="currentColor" d="M0-11.5C1-10.5 1.6-8.9 1.6-6.5V-4.8L10.4 7.4 8.9 9.2H-8.9L-10.4 7.4-1.6-4.8V-6.5C-1.6-8.9-1-10.5 0-11.5Z"/>;
+  }
+  if (type === 'recon') {
     return <g fill="currentColor">
       <path d="M0-10.5 2-4 10.7 6.4Q11.2 7 10.4 6.8L2.3 3.6 1.8 7.3 3.8 9.5H-3.8L-1.8 7.3-2.3 3.6-10.4 6.8Q-11.2 7-10.7 6.4L-2-4Z"/>
       <path d="M0-6V6.5" stroke="var(--map)" strokeWidth=".9" opacity=".45"/>
