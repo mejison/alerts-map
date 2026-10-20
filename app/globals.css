@@ -16,3 +16,6 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .region-state.yellow,.region-state.yellow .status-ring{color:#d7b777}.region-state.yellow .status-ring{border-color:#d7b77730}.map-attribution{font-size:9px}
 @media(max-width:700px){.ukraine-map{top:115px;height:calc(100% - 245px);transform:none}.map-tools button{width:35px;height:40px}.map-attribution{font-size:8px;bottom:12px}.map-attribution>span{font-size:6px}.statusbar .status-left{display:none}.statusbar .footer-notice{display:flex;justify-content:center;width:100%;font-size:8px}.map-tools{top:37%}.north{display:none}}
+
+/* Geography zooms; label and marker overlays are sized in CSS pixels. */
+.oblast-base,.target-trail{vector-effect:non-scaling-stroke}.target-hit-area{fill:transparent;stroke:none;pointer-events:all}.map-label-layer{pointer-events:none}
