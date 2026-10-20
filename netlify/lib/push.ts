@@ -1,25 +1,28 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { getStore } from '@netlify/blobs';
-import webpush from 'web-push';
+import { ONESIGNAL_APP_ID, PUSH_SITE_ORIGIN } from '../../lib/onesignal-config.mjs';
+import { validOneSignalId } from '../../lib/push-core.mjs';
 import regions from '../../lib/regions.json';
 import { regionKey, validateAlertSnapshot } from '../../lib/push-core.mjs';
 import type { Alerts } from '../../lib/types';
 
 export type PushRecord = {
-  subscription?: webpush.PushSubscription;
+  subscriptionId?: string;
   region: string;
   tokenHash: string;
   state: string;
   disabled?: boolean;
   leaseUntil?: number;
   lastTestAt?: number;
+  pending?: { state: string; id: string };
 };
 
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-export const subscriptionKey = (endpoint: string) => `subscriptions/${hash(endpoint)}`;
+export const subscriptionPrefix = `onesignal/${ONESIGNAL_APP_ID}/`;
+export const subscriptionKey = (id: string) => `${subscriptionPrefix}${id}`;
 export const store = () => getStore({ name: 'varta-push', consistency: 'strong' });
 export const canonicalRegion = (name: string) => regions.find(region => regionKey(region) === regionKey(name));
-export const pushConfigured = () => !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
+export const pushConfigured = () => !!process.env.ONESIGNAL_REST_API_KEY;
 export const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 
 export function authorized(record: PushRecord, token: string) {
@@ -35,8 +38,8 @@ export async function input(request: Request) {
   const text = await request.text();
   if (text.length > 8192) throw new Error('input');
   const body = JSON.parse(text);
-  if (typeof body.endpoint !== 'string' || body.endpoint.length > 2048) throw new Error('input');
-  return { body, token, key: subscriptionKey(body.endpoint) };
+  if (!validOneSignalId(body.subscriptionId)) throw new Error('input');
+  return { body, token, key: subscriptionKey(body.subscriptionId) };
 }
 
 // Only freshly fetched, complete alerts can cause a notification. No fallback
@@ -55,12 +58,30 @@ export async function freshAlerts(): Promise<Alerts> {
   return snapshot;
 }
 
-export async function sendPush(subscription: webpush.PushSubscription, message: unknown, region: string) {
-  return webpush.sendNotification(subscription, JSON.stringify(message), {
-    vapidDetails: { subject: process.env.VAPID_SUBJECT!, publicKey: process.env.VAPID_PUBLIC_KEY!, privateKey: process.env.VAPID_PRIVATE_KEY! },
-    TTL: 120, urgency: 'high', timeout: 5000,
-    topic: hash(region).slice(0, 32),
+type PushMessage = { title: string; body: string; region: string; timestamp: number; expiresAt: number };
+export async function sendPush(subscriptionId: string, message: PushMessage, region: string, deliveryId: string = randomUUID()) {
+  const url = new URL('/', PUSH_SITE_ORIGIN); url.searchParams.set('region', message.region);
+  const response = await fetch('https://api.onesignal.com/notifications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Key ${process.env.ONESIGNAL_REST_API_KEY}` },
+    signal: AbortSignal.timeout(9000),
+    body: JSON.stringify({
+      app_id: ONESIGNAL_APP_ID, target_channel: 'push',
+      include_subscription_ids: [subscriptionId],
+      headings: { en: message.title, uk: message.title },
+      contents: { en: message.body, uk: message.body },
+      url: url.href, data: { region: message.region, timestamp: message.timestamp, expiresAt: message.expiresAt },
+      chrome_web_icon: `${PUSH_SITE_ORIGIN}/icons/icon-192.png`,
+      chrome_web_badge: `${PUSH_SITE_ORIGIN}/icons/badge-96.png`,
+      web_push_topic: hash(region).slice(0, 32), ttl: 120, priority: 10,
+      idempotency_key: deliveryId,
+    }),
   });
+  const result = await response.json() as { id?: string; errors?: { invalid_player_ids?: string[] } };
+  if (result.errors?.invalid_player_ids?.includes(subscriptionId)) throw Object.assign(new Error('Inactive OneSignal subscription'), { statusCode: 410 });
+  // A 2xx without a message ID means OneSignal did not send anything.
+  if (!response.ok || !result.id) throw new Error('OneSignal did not accept the notification');
+  return result.id;
 }
 
 export const expiredPush = (error: unknown) => [404, 410].includes((error as {statusCode?: number})?.statusCode || 0);

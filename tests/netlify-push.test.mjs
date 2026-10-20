@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { BlobsServer } from '@netlify/blobs/server';
 import { getStore, setEnvironmentContext } from '@netlify/blobs';
-import webpush from 'web-push';
+import { ONESIGNAL_APP_ID } from '../lib/onesignal-config.mjs';
 
 test('Netlify subscriptions and dispatcher use durable state, leases, ownership and safe failure handling', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'varta-push-test-'));
@@ -19,11 +19,10 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
   const server = new BlobsServer({ directory, token: 'test-token', logger: () => {} });
   const address = await server.start(), url = `http://127.0.0.1:${address.port}`;
   setEnvironmentContext({ edgeURL: url, uncachedEdgeURL: url, siteID: 'test-site', token: 'test-token' });
-  const originalFetch = globalThis.fetch, originalSend = webpush.sendNotification;
-  const env = Object.fromEntries(['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'].map(key => [key, process.env[key]]));
-  const keys = webpush.generateVAPIDKeys();
-  Object.assign(process.env, { VAPID_PUBLIC_KEY: keys.publicKey, VAPID_PRIVATE_KEY: keys.privateKey, VAPID_SUBJECT: 'https://alerts.example' });
-  let snapshot = { oblasts: [], raions: [] }, unavailable = false, calls = [], duringSend = null;
+  const originalFetch = globalThis.fetch;
+  const previousKey = process.env.ONESIGNAL_REST_API_KEY;
+  process.env.ONESIGNAL_REST_API_KEY = 'test-api-key';
+  let snapshot = { oblasts: [], raions: [] }, unavailable = false, calls = [], duringSend = null, emptyResponse = false;
   // The filesystem emulator omits ETags on GET and does not atomically check
   // and rename on PUT. Preserve its actual PUT ETags and serialize local I/O
   // to emulate Netlify's documented production atomic-CAS contract.
@@ -31,6 +30,11 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
   const etags = new Map();
   globalThis.fetch = (input, init) => {
     if (String(input).startsWith('https://neptun.in.ua/')) return Promise.resolve(unavailable ? new Response('', { status: 503 }) : Response.json(snapshot));
+    if (String(input) === 'https://api.onesignal.com/notifications') {
+      assert.equal(init.headers.Authorization, 'Key test-api-key');
+      calls.push(JSON.parse(init.body));
+      return Promise.resolve().then(async () => { if (duringSend) await duringSend(); return Response.json({ id: emptyResponse ? '' : '39abcb43-a48c-4aab-8bee-90338afe53c0' }); });
+    }
     const key = String(input), method = (input instanceof Request ? input.method : init?.method || 'GET').toUpperCase();
     const next = operations.then(async () => {
       const response = await originalFetch(input, init), headers = new Headers(response.headers);
@@ -41,15 +45,17 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
     operations = next.then(() => new Promise(resolve => setTimeout(resolve, 2)));
     return next;
   };
-  webpush.sendNotification = async (_subscription, payload) => { calls.push(JSON.parse(payload)); if (duringSend) await duringSend(); return { statusCode: 201, headers: {}, body: '' }; };
-  const token = 'a'.repeat(64), endpoint = 'https://fcm.googleapis.com/fcm/send/test';
-  const browserSubscription = { endpoint, keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
-  const request = (body = {}, method = 'POST', owner = token, origin = 'https://alerts.example') => new Request('https://alerts.example/api/push/subscription', { method, headers: { Origin: origin, 'Content-Type': 'application/json', Authorization: `Bearer ${owner}` }, body: JSON.stringify({ endpoint, ...body }) });
+  const token = 'a'.repeat(64), subscriptionId = '7bf96834-2f7d-44ac-b320-b511b0fe2aa9';
+  const request = (body = {}, method = 'POST', owner = token, origin = 'https://alerts.example') => new Request('https://alerts.example/api/push/subscription', { method, headers: { Origin: origin, 'Content-Type': 'application/json', Authorization: `Bearer ${owner}` }, body: JSON.stringify({ subscriptionId, ...body }) });
   const db = getStore({ name: 'varta-push', consistency: 'strong' });
-  const record = async () => { const { blobs } = await db.list({ prefix: 'subscriptions/' }); return db.get(blobs[0].key, { type: 'json' }); };
+  const record = async () => { const { blobs } = await db.list({ prefix: `onesignal/${ONESIGNAL_APP_ID}/` }); return db.get(blobs[0].key, { type: 'json' }); };
   try {
     assert.equal((await config(new Request('https://alerts.example/api/push/config'))).status, 200);
-    assert.equal((await subscription(request({ subscription: browserSubscription, region: 'Рівненська область' }))).status, 200);
+    const publicConfig = await (await config(new Request('https://alerts.example/api/push/config'))).json();
+    assert.equal(publicConfig.provider, 'OneSignal');
+    assert.equal(publicConfig.appId, ONESIGNAL_APP_ID);
+    assert.equal(JSON.stringify(publicConfig).includes('test-api-key'), false);
+    assert.equal((await subscription(request({ region: 'Рівненська область' }))).status, 200);
     assert.equal((await record()).state, 'clear');
     await dispatch(); assert.equal(calls.length, 0, 'registration does not fabricate a transition');
     assert.equal((await subscription(request({ action: 'status' }, 'POST', 'b'.repeat(64)))).status, 403);
@@ -59,12 +65,22 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
     duringSend = () => new Promise(resolve => setTimeout(resolve, 25));
     await Promise.all([dispatch(), dispatch()]);
     assert.equal(calls.length, 1, 'overlapping runs send only one transition');
+    assert.equal(calls[0].app_id, ONESIGNAL_APP_ID);
+    assert.deepEqual(calls[0].include_subscription_ids, [subscriptionId]);
+    assert.equal(calls[0].ttl, 120);
+    assert.equal(new URL(calls[0].url).searchParams.get('region'), 'Рівненська область');
+    assert.deepEqual(Object.keys(calls[0].headings).sort(), ['en','uk']);
     await dispatch(); assert.equal(calls.length, 1);
     snapshot.oblasts[0].level = 'red'; await dispatch(); assert.equal(calls.length, 2);
     unavailable = true;
     await assert.rejects(dispatch); assert.equal(calls.length, 2); assert.equal((await record()).state, 'red');
     unavailable = false; snapshot = { oblasts: [], raions: [] };
-    await dispatch(); assert.equal(calls.length, 3); assert.equal(calls[2].title, 'Відбій повітряної тривоги');
+    emptyResponse = true; await dispatch();
+    assert.equal((await record()).state, 'red', '200 without a OneSignal message ID does not acknowledge delivery');
+    const retryId = calls.at(-1).idempotency_key;
+    emptyResponse = false; await dispatch();
+    assert.equal(calls.at(-1).idempotency_key, retryId, 'retry reuses the OneSignal idempotency key');
+    assert.equal(calls.at(-1).headings.uk, 'Відбій повітряної тривоги');
     duringSend = null;
     assert.equal((await testPush(request())).status, 200);
     assert.equal((await testPush(request())).status, 429, 'test notifications are rate limited');
@@ -72,11 +88,11 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
     duringSend = async () => { assert.equal((await subscription(request({}, 'DELETE'))).status, 200); };
     await dispatch();
     assert.equal((await record()).disabled, true, 'an in-flight dispatch cannot resurrect an unsubscribed endpoint');
-    assert.equal((await record()).subscription, undefined, 'unsubscribing removes endpoint and encryption keys');
+    assert.equal((await record()).subscriptionId, undefined, 'unsubscribing removes the OneSignal subscription ID');
     const sent = calls.length; await dispatch(); assert.equal(calls.length, sent);
   } finally {
-    globalThis.fetch = originalFetch; webpush.sendNotification = originalSend;
-    for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    globalThis.fetch = originalFetch;
+    if (previousKey === undefined) delete process.env.ONESIGNAL_REST_API_KEY; else process.env.ONESIGNAL_REST_API_KEY = previousKey;
     setEnvironmentContext({}); await server.stop(); await rm(directory, { recursive: true, force: true });
   }
 });

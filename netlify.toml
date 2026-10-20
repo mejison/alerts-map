@@ -47,6 +47,12 @@
     Service-Worker-Allowed = "/"
 
 [[headers]]
+  for = "/push/onesignal/OneSignalSDKWorker.js"
+  [headers.values]
+    Content-Type = "application/javascript; charset=utf-8"
+    Cache-Control = "no-cache"
+
+[[headers]]
   for = "/manifest.webmanifest"
   [headers.values]
     Content-Type = "application/manifest+json; charset=utf-8"

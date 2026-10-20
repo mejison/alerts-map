@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { loadOneSignal, optInOneSignal, type OneSignalSDK } from './onesignal';
 
-type PushConfig = { enabled: boolean; publicKey: string | null };
+type PushConfig = { enabled: boolean; provider: string; appId: string };
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 const TOKEN = 'varta-push-token';
 
@@ -20,10 +21,10 @@ export function useNotifications() {
   const [prompt, setPrompt] = useState<InstallPrompt | null>(null), [region, setRegion] = useState('');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const [permission, setPermission] = useState<NotificationPermission>('default');
-  const registration = useRef<ServiceWorkerRegistration | null>(null);
+  const sdk = useRef<OneSignalSDK | null>(null);
 
   useEffect(() => {
-    let active = true;
+    let active = true, dispose = () => {};
     const standalone = window.matchMedia('(display-mode: standalone)');
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIos(isIos);
@@ -35,79 +36,87 @@ export function useNotifications() {
     const capable = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
     setSupported(capable);
     if ('Notification' in window) setPermission(Notification.permission);
-    if ('serviceWorker' in navigator && window.isSecureContext) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).then(async () => {
-        const ready = await navigator.serviceWorker.ready;
+    // The PWA cache and OneSignal use separate workers and separate scopes.
+    if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(() => {});
+    if (capable) {
+      Promise.all([
+        loadOneSignal(),
+        fetch('/api/push/config', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Сповіщення тимчасово недоступні.'); return response.json() as Promise<PushConfig>; }),
+      ]).then(async ([oneSignal, settings]) => {
         if (!active) return;
-        registration.current = ready;
-        if (!capable) return;
-        const response = await fetch('/api/push/config', { cache: 'no-store' });
-        if (!response.ok) throw new Error();
-        const settings = await response.json() as PushConfig;
-        if (!active) return;
-        setConfig(settings);
-        const subscription = await ready.pushManager.getSubscription(), token = localStorage.getItem(TOKEN);
-        if (subscription && token && settings.enabled && Notification.permission === 'granted') {
+        sdk.current = oneSignal; setSupported(oneSignal.Notifications.isPushSupported()); setConfig(settings);
+        const changed = async () => {
+          if (!active) return;
+          setPermission(Notification.permission);
+          const id = oneSignal.User.PushSubscription.id;
+          if (!id || !oneSignal.User.PushSubscription.optedIn) { setRegion(''); return; }
           try {
-            const status = await call('subscription', token, { action: 'status', endpoint: subscription.endpoint });
+            const token = localStorage.getItem(TOKEN);
+            if (!token || !settings.enabled) return;
+            const status = await call('subscription', token, { action: 'status', subscriptionId: id });
             if (active) setRegion(status.region || '');
-          } catch { /* Keep the subscribe action available for re-registration. */ }
-        }
-      }).catch(() => { if (active) setConfig({ enabled: false, publicKey: null }); });
-    } else setConfig({ enabled: false, publicKey: null });
+          } catch { /* A new SDK subscription can be registered with the button. */ }
+        };
+        oneSignal.User.PushSubscription.addEventListener('change', changed);
+        oneSignal.Notifications.addEventListener('permissionChange', changed);
+        dispose = () => {
+          oneSignal.User.PushSubscription.removeEventListener('change', changed);
+          oneSignal.Notifications.removeEventListener('permissionChange', changed);
+        };
+        await changed();
+      }).catch(reason => { if (active) { setConfig({ enabled: false, provider: 'OneSignal', appId: '' }); setError(reason instanceof Error ? reason.message : 'OneSignal тимчасово недоступний.'); } });
+    } else setConfig({ enabled: false, provider: 'OneSignal', appId: '' });
     return () => {
-      active = false; standalone.removeEventListener('change', updateInstalled);
+      active = false; dispose(); standalone.removeEventListener('change', updateInstalled);
       window.removeEventListener('beforeinstallprompt', install); window.removeEventListener('appinstalled', done);
     };
   }, []);
 
   async function subscribe(selected: string) {
-    if (busy || !selected || !config?.enabled || !config.publicKey || !registration.current) return;
+    if (busy || !selected || !config?.enabled || !sdk.current) return;
     setBusy(true); setMessage(''); setError('');
-    // Request permission immediately within the button gesture (required by iOS).
-    let created: PushSubscription | null = null;
+    let previouslySubscribed = false;
     try {
-      const allowed = await Notification.requestPermission(); setPermission(allowed);
-      if (allowed !== 'granted') throw new Error('Дозвольте сповіщення в налаштуваннях браузера для цього сайту.');
+      const oneSignal = sdk.current;
+      previouslySubscribed = oneSignal.User.PushSubscription.optedIn;
+      // optInOneSignal invokes the native permission prompt before any awaits.
+      const subscriptionId = await optInOneSignal(oneSignal);
+      setPermission(Notification.permission);
       let token = localStorage.getItem(TOKEN);
-      let subscription = await registration.current.pushManager.getSubscription();
-      // A lost ownership token needs a new browser subscription.
-      if (subscription && !token) { await subscription.unsubscribe(); subscription = null; }
       if (!token) { token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''); localStorage.setItem(TOKEN, token); }
-      if (!subscription) {
-        const binary = atob(config.publicKey.replace(/-/g, '+').replace(/_/g, '/'));
-        const key = Uint8Array.from(binary, character => character.charCodeAt(0));
-        subscription = await registration.current.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-        created = subscription;
-      }
-      const result = await call('subscription', token, { endpoint: subscription.endpoint, subscription: subscription.toJSON(), region: selected });
-      setRegion(result.region || selected); setMessage('Підписку збережено. Повідомимо про тривогу й відбій у вашій області.');
-    } catch (error) {
-      if (created) await created.unsubscribe().catch(() => false);
-      setError(error instanceof Error ? error.message : 'Не вдалося увімкнути сповіщення.');
+      const result = await call('subscription', token, { subscriptionId, region: selected });
+      setRegion(result.region || selected);
+      oneSignal.User.addTags({ varta_region: result.region || selected });
+      setMessage('Підписку OneSignal збережено. Повідомимо про тривогу й відбій у вашій області.');
+    } catch (reason) {
+      if (!previouslySubscribed) await sdk.current.User.PushSubscription.optOut().catch(() => {});
+      setError(reason instanceof Error ? reason.message : 'Не вдалося увімкнути сповіщення.');
+      setPermission(Notification.permission);
     } finally { setBusy(false); }
   }
 
   async function unsubscribe() {
-    if (busy || !registration.current) return;
+    if (busy || !sdk.current) return;
     setBusy(true); setMessage(''); setError('');
     try {
-      const subscription = await registration.current.pushManager.getSubscription(), token = localStorage.getItem(TOKEN);
-      if (subscription && token) await call('subscription', token, { endpoint: subscription.endpoint }, 'DELETE');
-      if (subscription) await subscription.unsubscribe();
-      localStorage.removeItem(TOKEN); setRegion(''); setMessage('Сповіщення на цьому пристрої вимкнено.');
-    } catch (error) { setError(error instanceof Error ? error.message : 'Не вдалося вимкнути сповіщення.'); }
+      const oneSignal = sdk.current, subscriptionId = oneSignal.User.PushSubscription.id, token = localStorage.getItem(TOKEN);
+      // OneSignal stops delivery even if our metadata API is temporarily down.
+      await oneSignal.User.PushSubscription.optOut(); setRegion('');
+      oneSignal.User.removeTags(['varta_region']);
+      if (subscriptionId && token) await call('subscription', token, { subscriptionId }, 'DELETE');
+      localStorage.removeItem(TOKEN); setMessage('Сповіщення OneSignal на цьому пристрої вимкнено.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Не вдалося вимкнути сповіщення.'); }
     finally { setBusy(false); }
   }
 
   async function test() {
-    if (busy || !registration.current) return;
+    if (busy || !sdk.current) return;
     setBusy(true); setMessage(''); setError('');
     try {
-      const subscription = await registration.current.pushManager.getSubscription(), token = localStorage.getItem(TOKEN);
-      if (!subscription || !token) throw new Error('Спочатку увімкніть сповіщення.');
-      await call('test', token, { endpoint: subscription.endpoint }); setMessage('Тест надіслано. Перевірте центр сповіщень телефону.');
-    } catch (error) { setError(error instanceof Error ? error.message : 'Не вдалося надіслати тест.'); }
+      const subscriptionId = sdk.current.User.PushSubscription.id, token = localStorage.getItem(TOKEN);
+      if (!subscriptionId || !token) throw new Error('Спочатку увімкніть сповіщення.');
+      await call('test', token, { subscriptionId }); setMessage('Тест надіслано через OneSignal. Перевірте центр сповіщень телефону.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Не вдалося надіслати тест.'); }
     finally { setBusy(false); }
   }
 

@@ -32,29 +32,3 @@ self.addEventListener('fetch', event => {
     })));
   }
 });
-self.addEventListener('push', event => {
-  if (!event.data) return;
-  let message;
-  try { message = event.data.json(); } catch { return; }
-  // Expired alert messages must not reappear after a phone reconnects later.
-  if (typeof message.expiresAt !== 'number' || message.expiresAt < Date.now()) return;
-  event.waitUntil(self.registration.showNotification(message.title || 'ВАРТА', {
-    body: message.body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/badge-96.png',
-    tag: message.tag || 'varta-alert',
-    renotify: true,
-    timestamp: message.timestamp,
-    data: { region: message.region || '' },
-  }));
-});
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const url = new URL('/', self.location.origin);
-  if (event.notification.data?.region) url.searchParams.set('region', event.notification.data.region);
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async clients => {
-    const client = clients.find(client => new URL(client.url).origin === url.origin);
-    if (client) { await client.navigate(url.href); return client.focus(); }
-    return self.clients.openWindow(url.href);
-  }));
-});
