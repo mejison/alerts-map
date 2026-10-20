@@ -40,6 +40,7 @@ export function loadOneSignal(): Promise<OneSignalSDK> {
           appId: ONESIGNAL_APP_ID,
           serviceWorkerPath: 'push/onesignal/OneSignalSDKWorker.js',
           serviceWorkerParam: { scope: '/push/onesignal/' },
+          serviceWorkerOverrideForTypical: true,
           notifyButton: { enable: false },
           welcomeNotification: { disable: true },
           promptOptions: { slidedown: { prompts: [{ type: 'push', autoPrompt: false }] } },
