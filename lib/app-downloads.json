@@ -1,6 +1,6 @@
 {
   "iosStoreUrl": null,
   "androidStoreUrl": null,
-  "androidPreviewUrl": null,
+  "androidPreviewUrl": "https://github.com/mejison/alerts-map/releases/download/mobile-preview-0.1.0/varta-0.1.0-preview.apk",
   "version": "0.1.0"
 }

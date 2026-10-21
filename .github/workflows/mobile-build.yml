@@ -2,9 +2,15 @@ name: Mobile builds
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        options: [all, android, ios]
+        default: all
   push:
     branches: [main]
-    paths: ['app/**', 'components/**', 'lib/**', 'netlify/client/**', 'public/**', 'ios/**', 'android/**', 'capacitor.config.ts', 'vite.mobile.config.ts', 'package*.json', '.github/workflows/mobile-build.yml']
+    paths: ['app/**', 'components/**', 'lib/**', 'netlify/client/**', 'public/**', 'ios/**', 'android/**', 'capacitor.config.ts', 'vite.mobile.config.ts', 'package*.json', '!app/download/**', '!components/download-landing.*', '!lib/app-downloads.json', '!netlify/client/download/**', '!public/illustrations/**', '!public/privacy/**']
 
 permissions:
   contents: read
@@ -18,6 +24,7 @@ env:
 
 jobs:
   android:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -44,7 +51,8 @@ jobs:
           retention-days: 14
 
   ios:
-    runs-on: macos-26
+    if: github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios'
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +60,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Select installed stable Xcode 26
+        shell: bash
+        run: |
+          VARTA_XCODE_PATH="$(node -e 'const fs=require("node:fs");const names=fs.readdirSync("/Applications").filter(name=>/^Xcode_26(?:\.\d+){1,2}\.app$/.test(name)).sort((a,b)=>a.localeCompare(b,"en",{numeric:true}));if(!names.length)throw Error("Xcode 26 is required");process.stdout.write("/Applications/"+names.at(-1)+"/Contents/Developer");')"
+          sudo xcode-select --switch "$VARTA_XCODE_PATH"
+          xcodebuild -version
       - run: npm ci --no-audit --no-fund
       - run: npm run build:mobile
       - run: npx cap sync ios
