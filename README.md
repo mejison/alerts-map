@@ -6,6 +6,8 @@
 
 Node.js 22.13 або новіший.
 
+Мобільні проєкти для iPhone та Android розміщені в `ios/` і `android/` (Capacitor 8). Збірка: `npm run mobile:sync`. Нативний OneSignal, підписання, CI-артефакти й публікація описані в [docs/MOBILE.md](docs/MOBILE.md). Лендінг із фактичним статусом завантажень — `/download/`; store-посилання налаштовуються в `lib/app-downloads.json` після публікації.
+
 ```sh
 npm install
 npm run dev

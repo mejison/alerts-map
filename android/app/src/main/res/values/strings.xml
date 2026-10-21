@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ВАРТА</string>
+    <string name="title_activity_main">ВАРТА</string>
+    <string name="package_name">ua.varta.alerts</string>
+    <string name="custom_url_scheme">ua.varta.alerts</string>
+</resources>

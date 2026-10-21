@@ -1,8 +1,10 @@
 import { ONESIGNAL_APP_ID, ONESIGNAL_SDK_URL } from './onesignal-config.mjs';
+import { isNativeApp } from './native-runtime';
 
 type Listener = () => void;
 type DeferredCallback = (sdk: OneSignalSDK) => void | Promise<void>;
 export type OneSignalSDK = {
+  getPermission?: () => NotificationPermission;
   init: (options: Record<string, unknown>) => Promise<void>;
   Notifications: {
     requestPermission: () => Promise<void>;
@@ -30,6 +32,10 @@ declare global {
 let initialization: Promise<OneSignalSDK> | null = null;
 export function loadOneSignal(): Promise<OneSignalSDK> {
   if (initialization) return initialization;
+  if (isNativeApp()) {
+    initialization = import('./native-onesignal').then(module => module.loadNativeOneSignal());
+    return initialization;
+  }
   initialization = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('OneSignal не відповідає. Перевірте мережу або блокувальник реклами.')), 20_000);
     const deferred = window.OneSignalDeferred || ([] as DeferredCallback[]);
@@ -66,7 +72,7 @@ export function loadOneSignal(): Promise<OneSignalSDK> {
 export async function optInOneSignal(sdk: OneSignalSDK): Promise<string> {
   // This call happens immediately in the user's button gesture, before awaits.
   await sdk.Notifications.requestPermission();
-  if (Notification.permission !== 'granted') throw new Error('Дозвольте сповіщення в налаштуваннях браузера для цього сайту.');
+  if (notificationPermission(sdk) !== 'granted') throw new Error('Дозвольте сповіщення в налаштуваннях ВАРТИ на цьому пристрої.');
   await sdk.User.PushSubscription.optIn();
   const subscription = sdk.User.PushSubscription;
   if (subscription.id && subscription.optedIn) return subscription.id;
@@ -76,4 +82,8 @@ export async function optInOneSignal(sdk: OneSignalSDK): Promise<string> {
     const timer = setTimeout(() => { cleanup(); reject(new Error('OneSignal ще реєструє пристрій. Спробуйте ще раз.')); }, 15_000);
     subscription.addEventListener('change', changed); changed();
   });
+}
+
+export function notificationPermission(sdk?: OneSignalSDK | null): NotificationPermission {
+  return sdk?.getPermission?.() ?? (typeof Notification === 'undefined' ? 'default' : Notification.permission);
 }

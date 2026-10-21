@@ -12,5 +12,6 @@ export default defineConfig({
   publicDir: resolve(project, 'public'),
   resolve: { alias: { '@': project } },
   plugins: [react()],
-  build: { outDir: resolve(project, 'dist-netlify'), emptyOutDir: true },
+  build: { outDir: resolve(project, 'dist-netlify'), emptyOutDir: true,
+    rolldownOptions: { input: { map: resolve(project, 'netlify/client/index.html'), download: resolve(project, 'netlify/client/download/index.html') } } },
 });

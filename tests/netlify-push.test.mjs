@@ -68,7 +68,8 @@ test('Netlify subscriptions and dispatcher use durable state, leases, ownership 
     assert.equal(calls[0].app_id, ONESIGNAL_APP_ID);
     assert.deepEqual(calls[0].include_subscription_ids, [subscriptionId]);
     assert.equal(calls[0].ttl, 120);
-    assert.equal(new URL(calls[0].url).searchParams.get('region'), 'Рівненська область');
+    assert.equal(new URL(calls[0].web_url).searchParams.get('region'), 'Рівненська область');
+    assert.equal(calls[0].url, undefined, 'native taps must open the app rather than a browser');
     assert.deepEqual(Object.keys(calls[0].headings).sort(), ['en','uk']);
     await dispatch(); assert.equal(calls.length, 1);
     snapshot.oblasts[0].level = 'red'; await dispatch(); assert.equal(calls.length, 2);

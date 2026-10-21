@@ -14,6 +14,11 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
+    // The download page is shared with a standalone Vite entry on Netlify.
+    files: ["components/download-landing.tsx"],
+    rules: { "@next/next/no-html-link-for-pages": "off", "@next/next/no-img-element": "off" },
+  },
+  {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
     rules: {
       // These files are vendored verbatim from shadcn@4.17.0. Keep the

@@ -1,13 +1,16 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { loadOneSignal, optInOneSignal, type OneSignalSDK } from './onesignal';
+import { loadOneSignal, notificationPermission, optInOneSignal, type OneSignalSDK } from './onesignal';
+import { apiFetch } from './api';
+import { isNativeApp } from './native-runtime';
+import { Capacitor } from '@capacitor/core';
 
-type PushConfig = { enabled: boolean; provider: string; appId: string };
+type PushConfig = { enabled: boolean; provider: string; appId: string; native?: { ios: boolean; android: boolean } };
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 const TOKEN = 'varta-push-token';
 
 async function call(path: string, token: string, data: unknown, method = 'POST') {
-  const response = await fetch(`/api/push/${path}`, {
+  const response = await apiFetch(`/api/push/${path}`, {
     method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(data),
   });
   const result = await response.json() as { error?: string; region?: string; ok?: boolean };
@@ -16,6 +19,7 @@ async function call(path: string, token: string, data: unknown, method = 'POST')
 }
 
 export function useNotifications() {
+  const native = isNativeApp();
   const [config, setConfig] = useState<PushConfig | null>(null);
   const [supported, setSupported] = useState(false), [ios, setIos] = useState(false), [installed, setInstalled] = useState(false);
   const [prompt, setPrompt] = useState<InstallPrompt | null>(null), [region, setRegion] = useState('');
@@ -28,26 +32,27 @@ export function useNotifications() {
     const standalone = window.matchMedia('(display-mode: standalone)');
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIos(isIos);
-    const updateInstalled = () => setInstalled(standalone.matches || !!(navigator as Navigator & { standalone?: boolean }).standalone);
+    const updateInstalled = () => setInstalled(native || standalone.matches || !!(navigator as Navigator & { standalone?: boolean }).standalone);
     updateInstalled(); standalone.addEventListener('change', updateInstalled);
     const install = (event: Event) => { event.preventDefault(); setPrompt(event as InstallPrompt); };
     const done = () => { setInstalled(true); setPrompt(null); };
     window.addEventListener('beforeinstallprompt', install); window.addEventListener('appinstalled', done);
-    const capable = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const capable = native || (window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
     setSupported(capable);
     if ('Notification' in window) setPermission(Notification.permission);
     // The PWA cache and OneSignal use separate workers and separate scopes.
-    if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(() => {});
+    if (!native && 'serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(() => {});
     if (capable) {
       Promise.all([
         loadOneSignal(),
-        fetch('/api/push/config', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Сповіщення тимчасово недоступні.'); return response.json() as Promise<PushConfig>; }),
+        apiFetch('/api/push/config', { cache: 'no-store' }).then(async response => { if (!response.ok) throw new Error('Сповіщення тимчасово недоступні.'); return response.json() as Promise<PushConfig>; }),
       ]).then(async ([oneSignal, settings]) => {
         if (!active) return;
+        if (native) settings.enabled = settings.enabled && settings.native?.[Capacitor.getPlatform() as 'ios' | 'android'] === true;
         sdk.current = oneSignal; setSupported(oneSignal.Notifications.isPushSupported()); setConfig(settings);
         const changed = async () => {
           if (!active) return;
-          setPermission(Notification.permission);
+          setPermission(notificationPermission(oneSignal));
           const id = oneSignal.User.PushSubscription.id;
           if (!id || !oneSignal.User.PushSubscription.optedIn) { setRegion(''); return; }
           try {
@@ -70,7 +75,7 @@ export function useNotifications() {
       active = false; dispose(); standalone.removeEventListener('change', updateInstalled);
       window.removeEventListener('beforeinstallprompt', install); window.removeEventListener('appinstalled', done);
     };
-  }, []);
+  }, [native]);
 
   async function subscribe(selected: string) {
     if (busy || !selected || !config?.enabled || !sdk.current) return;
@@ -81,7 +86,7 @@ export function useNotifications() {
       previouslySubscribed = oneSignal.User.PushSubscription.optedIn;
       // optInOneSignal invokes the native permission prompt before any awaits.
       const subscriptionId = await optInOneSignal(oneSignal);
-      setPermission(Notification.permission);
+      setPermission(notificationPermission(oneSignal));
       let token = localStorage.getItem(TOKEN);
       if (!token) { token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''); localStorage.setItem(TOKEN, token); }
       const result = await call('subscription', token, { subscriptionId, region: selected });
@@ -91,7 +96,7 @@ export function useNotifications() {
     } catch (reason) {
       if (!previouslySubscribed) await sdk.current.User.PushSubscription.optOut().catch(() => {});
       setError(reason instanceof Error ? reason.message : 'Не вдалося увімкнути сповіщення.');
-      setPermission(Notification.permission);
+      setPermission(notificationPermission(sdk.current));
     } finally { setBusy(false); }
   }
 
@@ -125,5 +130,5 @@ export function useNotifications() {
     await prompt.prompt(); await prompt.userChoice; setPrompt(null);
   }
 
-  return { config, supported, ios, installed, canInstall: !!prompt, install, region, busy, message, error, permission, subscribe, unsubscribe, test };
+  return { config, supported, ios, installed, native, canInstall: !!prompt, install, region, busy, message, error, permission, subscribe, unsubscribe, test };
 }

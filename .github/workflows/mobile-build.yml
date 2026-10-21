@@ -1,0 +1,72 @@
+name: Mobile builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['app/**', 'components/**', 'lib/**', 'netlify/client/**', 'public/**', 'ios/**', 'android/**', 'capacitor.config.ts', 'vite.mobile.config.ts', 'package*.json', '.github/workflows/mobile-build.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ONESIGNAL_DISABLE_LOCATION: 'true'
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build:mobile
+      - run: npx cap sync android
+      - name: Build Android preview APK
+        run: bash android/gradlew -p android assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: varta-android-preview
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:mobile
+      - run: npx cap sync ios
+      - run: xcodebuild -version
+      - name: Build for iOS Simulator without signing credentials
+        run: >-
+          xcodebuild -project ios/App/App.xcodeproj -scheme App
+          -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -configuration Debug -derivedDataPath mobile-builds/ios
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator app
+        run: ditto -c -k --sequesterRsrc --keepParent mobile-builds/ios/Build/Products/Debug-iphonesimulator/App.app mobile-builds/varta-ios-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: varta-ios-simulator
+          path: mobile-builds/varta-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14

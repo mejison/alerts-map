@@ -48,6 +48,14 @@ next-env.d.ts
 
 /dist/
 /dist-netlify/
+/dist-mobile/
+/mobile-builds/
+*.p8
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+**/google-services.json
 /.netlify/
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.

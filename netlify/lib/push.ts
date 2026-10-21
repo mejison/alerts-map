@@ -70,7 +70,7 @@ export async function sendPush(subscriptionId: string, message: PushMessage, reg
       include_subscription_ids: [subscriptionId],
       headings: { en: message.title, uk: message.title },
       contents: { en: message.body, uk: message.body },
-      url: url.href, data: { region: message.region, timestamp: message.timestamp, expiresAt: message.expiresAt },
+      web_url: url.href, data: { region: message.region, timestamp: message.timestamp, expiresAt: message.expiresAt },
       chrome_web_icon: `${PUSH_SITE_ORIGIN}/icons/icon-192.png`,
       chrome_web_badge: `${PUSH_SITE_ORIGIN}/icons/badge-96.png`,
       web_push_topic: hash(region).slice(0, 32), ttl: 120, priority: 10,
