@@ -36,6 +36,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/threat-history"
+  to = "/.netlify/functions/threat-history"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
