@@ -63,7 +63,7 @@ export default function Home(){
  const regions=useMemo(()=>geo.oblasts.map(f=>({key:f.properties.key,name:f.properties.region||f.properties.name||f.properties.key})).sort((a,b)=>a.name.localeCompare(b.name,'uk')),[geo]);
  useEffect(()=>{const requested=new URLSearchParams(window.location.search).get('region');const region=regions.find(r=>r.name===requested);if(region){setSelected(region.name);setMobile('map');}},[regions]);
  const grouped=useMemo(()=>{const result=new Map<string,{name:string;key:string;alerts:Alert[];level:string}>();for(const a of [...data.alerts.oblasts,...data.alerts.raions]){const name=data.alerts.oblasts.includes(a)?a.name:(a.oblast||a.name),key=normalize(name),prev=result.get(key);if(prev){prev.alerts.push(a);if(a.level==='red')prev.level='red';}else result.set(key,{name,key,alerts:[a],level:a.level});}return [...result.values()].sort((a,b)=>(a.level==='red'?0:1)-(b.level==='red'?0:1)||a.name.localeCompare(b.name,'uk'));},[data.alerts]);
- const cityLabels=useMemo(()=>showCities?resolveCityLabels({major:CITIES,places:settlements,view,pixelUnits,small}):[],[showCities,settlements,view,pixelUnits,small]);
+ const cityLabels=useMemo(()=>showCities?resolveCityLabels({major:CITIES,places:settlements,view:{zoom},pixelUnits,small}):[],[showCities,settlements,zoom,pixelUnits,small]);
  const threats=data.threats.filter(t=>t.status!=='resolved');
  // Selecting a region opens its context; threat-type filters remain nationwide.
  const mapThreats=threats.filter(t=>filter==='all'||(filter==='uav'?['uav','fpv','recon'].includes(t.type):['missile','ballistic','kab'].includes(t.type)));

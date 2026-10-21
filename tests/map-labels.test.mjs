@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveCityLabels, CITY_LABEL_ZOOMS } from '../lib/map-labels.mjs';
-import { project } from '../lib/live-core.mjs';
-import { worldToView } from '../lib/map-view.mjs';
 
 const view = zoom => ({ zoom, pan: { x: 0, y: 0 } });
 const place = (id, name, lon, type) => ({ id, name, lon, lat: 50, type });
@@ -28,24 +26,41 @@ test('larger settlement labels appear in separate zoom tiers', () => {
   assert.deepEqual(resolveCityLabels({ major: [], places, view: view(2.2), pixelUnits: 1 }).map(label => label.name), ['Нове Місто', 'Велике Селище']);
 });
 
-test('city labels are distributed across the visible map instead of clustering at its center', () => {
+test('zoom reveals cities and towns across all of Ukraine without a nationwide count limit', () => {
   const settlements = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/settlements.json', import.meta.url)), 'utf8'));
-  const mapView = view(1.5);
-  const labels = resolveCityLabels({ major: [], places: settlements.filter(item => item.type === 'city'), view: mapView, pixelUnits: 1 });
-  const sectors = new Map();
-
-  for (const label of labels) {
-    const [x, y] = project(label.lon, label.lat);
-    const position = worldToView({ x, y }, mapView);
-    const column = Math.min(3, Math.floor(position.x / 1100 * 4));
-    const row = Math.min(2, Math.floor(position.y / 800 * 3));
-    const sector = `${column}:${row}`;
-    sectors.set(sector, (sectors.get(sector) || 0) + 1);
+  const regions = {
+    west: label => label.lon < 26,
+    center: label => label.lon >= 26 && label.lon < 32,
+    east: label => label.lon >= 32 && label.lon < 36,
+    farEast: label => label.lon >= 36,
+    crimea: label => label.lon >= 32 && label.lat < 46.2,
+  };
+  for (const zoom of [1.5, 2.2]) {
+    const labels = resolveCityLabels({ major: [], places: settlements, view: view(zoom), pixelUnits: 1 });
+    const cities = labels.filter(label => label.type === 'city');
+    assert.ok(cities.length > 60, 'cities must not share a camera-wide label budget');
+    const tiers = zoom >= CITY_LABEL_ZOOMS.towns ? [cities, labels.filter(label => label.type === 'town')] : [cities];
+    if (tiers.length > 1) assert.ok(tiers[1].length > 40, 'towns must not share a camera-wide label budget');
+    for (const tier of tiers) {
+      for (const [region, matches] of Object.entries(regions)) {
+        assert.ok(tier.some(matches), `missing ${tier[0]?.type} labels in ${region} at zoom ${zoom}`);
+      }
+    }
   }
+});
 
-  assert.equal(labels.length, 60);
-  assert.ok(sectors.size >= 9, `expected labels in at least 9 viewport sectors, got ${sectors.size}`);
-  assert.ok(Math.max(...sectors.values()) <= 12, 'no single viewport sector should dominate the label selection');
+test('panning never changes the nationwide label set on desktop or mobile', () => {
+  const settlements = JSON.parse(readFileSync(fileURLToPath(new URL('../public/data/settlements.json', import.meta.url)), 'utf8'));
+  const major = [['Київ', 30.52, 50.45], ['Львів', 24.03, 49.84], ['Луганськ', 39.31, 48.57]];
+  for (const pixelUnits of [1, 2.8]) {
+    for (const zoom of [1.5, 2.2, 4]) {
+      const options = { major, places: settlements, view: view(zoom), pixelUnits, small: pixelUnits > 1 };
+      const nationwide = resolveCityLabels(options);
+      for (const pan of [{ x: -600, y: 400 }, { x: 600, y: -400 }, { x: -5000, y: 0 }]) {
+        assert.deepEqual(resolveCityLabels({ ...options, view: { zoom, pan } }), nationwide);
+      }
+    }
+  }
 });
 
 test('major labels remain at the overview and mobile keeps its compact set', () => {
@@ -56,16 +71,15 @@ test('major labels remain at the overview and mobile keeps its compact set', () 
   assert.deepEqual(mobile.map(label => label.name), ['Київ']);
 });
 
-test('labels avoid collisions, suppress duplicate major names, and skip offscreen points', () => {
+test('labels avoid collisions and suppress duplicate major names without camera clipping', () => {
   const major = [['Опорне', 30, 50]];
   const places = [
     place('overlap', 'Інше Місто', 30, 'city'),
     place('duplicate', 'Опорне', 35, 'city'),
     place('outside', 'За Краєм', 30, 'city'),
   ];
-  const labels = resolveCityLabels({ major, places, view: { zoom: 1.4, pan: { x: -5000, y: 0 } }, pixelUnits: 1 });
-  assert.deepEqual(labels, []);
-
-  const nearby = resolveCityLabels({ major, places: places.slice(0, 2), view: view(1.4), pixelUnits: 1 });
+  const nearby = resolveCityLabels({ major, places, view: view(1.4), pixelUnits: 1 });
   assert.deepEqual(nearby.map(label => label.name), ['Опорне']);
+  const outsideCamera = resolveCityLabels({ major, places, view: { zoom: 1.4, pan: { x: -5000, y: 0 } }, pixelUnits: 1 });
+  assert.deepEqual(outsideCamera, nearby);
 });
