@@ -3,4 +3,5 @@ export type Alert = { key: string; name: string; oblast: string; since?: string;
 export type Alerts = { raions: Alert[]; oblasts: Alert[] };
 export type Message = { channel: string; text: string; date: string };
 export type GeoFeature = { properties: {key:string; region?:string;name?:string;rayon?:string}; geometry: {type:string;coordinates:any[]}; path:string };
+export type Settlement = { id:string; name:string; lon:number; lat:number; type:'city'|'town' };
 export type LiveData = { threats: Threat[]; alerts: Alerts; messages: Message[]; receivedAt: string; provider: string; providers: { alertsInUa: boolean; ukraineAlarm: boolean }; errors: string[] };

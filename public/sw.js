@@ -1,6 +1,6 @@
 /* No API responses are cached: an offline response must never imply an all-clear. */
-const CACHE = 'varta-shell-v1';
-const SHELL = ['/', '/favicon.svg', '/icons/icon-192.png', '/data/oblasts.geojson', '/data/raions.geojson', '/fonts/manrope-regular.ttf', '/fonts/manrope-bold.ttf'];
+const CACHE = 'varta-shell-v2';
+const SHELL = ['/', '/favicon.svg', '/icons/icon-192.png', '/data/oblasts.geojson', '/data/raions.geojson', '/data/settlements.json', '/fonts/manrope-regular.ttf', '/fonts/manrope-bold.ttf'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(async cache => {
     await cache.addAll(SHELL);
