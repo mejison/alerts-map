@@ -72,6 +72,11 @@ export default function Home(){
  const regionAlerts=selected?[...data.alerts.oblasts,...data.alerts.raions].filter(a=>normalize(data.alerts.oblasts.includes(a)?a.name:(a.oblast||a.name))===normalize(selected)):[];
  const choose=(name:string)=>{setSelected(name);setDetail(null);setMobile('map');};
  const saveFavorite=()=>{const next=favorite===selected?'':selected;setFavorite(next);try{localStorage.setItem('varta-region',next);}catch{}setToast(next?'Регіон додано до обраного':'Регіон прибрано з обраного');};
+ useEffect(()=>{
+  const light=theme==='light';
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content',light?'#ffffff':'#17191f');
+  document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')?.setAttribute('content',light?'light':'dark');
+ },[theme]);
  const switchTheme=()=>{const next=theme==='dark'?'light':'dark';setTheme(next);try{localStorage.setItem('varta-theme',next);}catch{}};
  const reset=()=>{setView(DEFAULT_VIEW);setSelected('');setDetail(null);};
  const focusThreat=(t:Threat)=>{setDetail(t);setMobile('map');if(canPlot(t)){const [x,y]=project(t.lon,t.lat);setView({zoom:1.7,pan:{x:(550-x)*1.7,y:(400-y)*1.7}});}};

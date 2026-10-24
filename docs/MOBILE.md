@@ -47,4 +47,12 @@ API-запити нативного застосунку виконуються 
 
 Лендінг: `/download/`. Вебкарта: `/`. Приватність: `/privacy/`.
 
+## Системні зони PWA на iPhone
+
+Фон `html/body` має збігатися з шапкою та нижньою навігацією, оскільки iOS використовує його для системних зон поза вмістом сторінки. CSS `color-scheme` і метадані `theme-color` перемикаються разом із темою карти. Застарілий `black-translucent` прибраний; `viewport-fit=cover` та safe-area відступи шапки й навігації збережені. У встановленому режимі висота береться від layout viewport через `100%`, у вкладці — через `100dvh`.
+
+Після деплою закрийте й повторно відкрийте PWA з мережею для оновлення оболонки. Якщо iOS зберегла старе оформлення встановлення, може знадобитися повторне додавання іконки; після перевстановлення перевірте підписку на сповіщення. Перевірка на фізичному iPhone 11 залишається потрібною: темна/світла тема, поворот екрана, повернення з фону та відкриття клавіатури. Локально перевірений WebKit-макет 414×896 з моделлю системних відступів 44/34 px; це не замінює перевірку iOS Home Screen.
+
+Джерела: [WebKit про фон і safe-area](https://webkit.org/blog/7929/designing-websites-for-iphone-x/), [коментар WebKit про застарілий black-translucent](https://www2.webkit.org/show_bug.cgi?id=317153#c2).
+
 Офіційні джерела: [Capacitor](https://capacitorjs.com/docs/getting-started/environment-setup), [OneSignal Capacitor SDK](https://documentation.onesignal.com/docs/en/capacitor-sdk-setup), [APNs](https://documentation.onesignal.com/docs/en/ios-p8-token-based-connection-to-apns), [FCM](https://documentation.onesignal.com/docs/en/android-firebase-credentials), [дані OneSignal SDK](https://documentation.onesignal.com/docs/en/data-collected-by-the-onesignal-sdk).

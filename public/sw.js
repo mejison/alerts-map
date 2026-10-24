@@ -1,5 +1,5 @@
 /* No API responses are cached: an offline response must never imply an all-clear. */
-const CACHE = 'varta-shell-v2';
+const CACHE = 'varta-shell-v3';
 const SHELL = ['/', '/favicon.svg', '/icons/icon-192.png', '/data/oblasts.geojson', '/data/raions.geojson', '/data/settlements.json', '/fonts/manrope-regular.ttf', '/fonts/manrope-bold.ttf'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(async cache => {
@@ -20,9 +20,9 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/.netlify/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then(response => {
-      if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put('/', copy))); }
+      if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(url.pathname, copy))); }
       return response;
-    }).catch(() => caches.match('/').then(cached => cached || Response.error())));
+    }).catch(() => caches.match(url.pathname).then(cached => cached || Response.error())));
     return;
   }
   if (/^\/(assets|fonts|icons|data)\//.test(url.pathname)) {

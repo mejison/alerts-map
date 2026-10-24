@@ -7,7 +7,7 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#11151d",
+  "background_color": "#17191f",
   "theme_color": "#17191f",
   "categories": ["news", "utilities"],
   "icons": [

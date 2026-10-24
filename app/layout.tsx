@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: "ВАРТА — карта тривог України",
   description: "Повітряні тривоги та публічні повідомлення про повітряні загрози на інтерактивній карті України. Оновлення в реальному часі.",
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, title: 'ВАРТА', statusBarStyle: 'black-translucent' },
+  appleWebApp: { capable: true, title: 'ВАРТА' },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#17191f' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#17191f', colorScheme: 'dark' };
 
 export default function RootLayout({
   children,
